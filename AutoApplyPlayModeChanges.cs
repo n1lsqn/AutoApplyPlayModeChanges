@@ -1,9 +1,16 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using VRC.SDK3.Avatars.Components;
 
 [InitializeOnLoad]
 public static class AutoApplyPlayModeChanges {
+	private const string PREV_KEY = "AutoApplyPlayModeChanges_Enabled";
+	public static bool Enabled {
+		get => EditorPrefs.GetBool(PREV_KEY, true);
+		set => EditorPrefs.SetBool(PREV_KEY, value);
+	}
+
   private static readonly Dictionary<int, Dictionary<string, object>> savedValues = new Dictionary<int, Dictionary<string, object>>();
   static AutoApplyPlayModeChanges() {
       EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
@@ -13,9 +20,9 @@ public static class AutoApplyPlayModeChanges {
 		if (state == PlayModeStateChange.EnteredPlayMode) {
 		  savedValues.Clear();
 		} else if (state == PlayModeStateChange.ExitingPlayMode) {
-			SaveModified();
+			if (Enabled) SaveModified();
 		} else if (state == PlayModeStateChange.EnteredEditMode) {
-			ApplyModified();
+			if (Enabled) ApplyModified();
 		}
   }
 
@@ -30,6 +37,10 @@ public static class AutoApplyPlayModeChanges {
 			if (comp == null) continue;
 
 			if (comp is Transform) continue;
+			if (comp is MeshFilter) continue;
+			if (comp is MeshRenderer) continue;
+			if (comp is SkinnedMeshRenderer) continue;
+			if (comp is VRCAvatarDescriptor) continue;
 
 			if (PrefabUtility.IsPartOfPrefabAsset(comp)) continue;
 			if (PrefabUtility.IsPartOfNonAssetPrefabInstance(comp)) continue;
@@ -41,10 +52,9 @@ public static class AutoApplyPlayModeChanges {
 
 			if (prop.NextVisible(true)) {
 				do {
-					// if (prop.propertyType == SerializedPropertyType.Generic) continue;
-					if (prop.propertyType != SerializedPropertyType.Generic) {
-						values[prop.propertyPath] = GetValue(prop);
-					} 
+					if (prop.propertyType == SerializedPropertyType.Generic) continue;
+
+					values[prop.propertyPath] = GetValue(prop);
 				} while (prop.NextVisible(false));
 			}
 
@@ -59,11 +69,9 @@ public static class AutoApplyPlayModeChanges {
 		foreach (var comp in comps) {
 			
 			if (comp == null) continue;
-
 			if (comp is Transform) continue;
 			
 			int id = comp.GetInstanceID();
-			
 			if (!savedValues.ContainsKey(id)) continue;
 			
 			var values = savedValues[id];
@@ -161,5 +169,30 @@ public static class AutoApplyPlayModeChanges {
 				prop.quaternionValue = (Quaternion)value;
 				break;
 		}
+	}
+}
+
+public class AutoSaveSettingsWindow : EditorWindow {
+	[MenuItem("Tools/n1lsqn/AutoSave Settings")]
+	public static void ShowWindow() {
+		GetWindow<AutoSaveSettingsWindow>("AutoSave Settings");
+	}
+
+	private void OnGUI() {
+		GUILayout.Space(10);
+		GUILayout.Label("Play Mode Auto-Save", EditorStyles.boldLabel);
+
+		bool enabled = AutoApplyPlayModeChanges.Enabled;
+		bool newEnabled = EditorGUILayout.Toggle("Enabled Auto-Save", enabled);
+
+		if (newEnabled != enabled) {
+			AutoApplyPlayModeChanges.Enabled = newEnabled;
+		}
+
+		GUILayout.Space(10);
+		EditorGUILayout.HelpBox(
+			"Playモードで編集したPhysBoneなどの値を自動保存/復元します。\nToggleをOFFにすると自動保存が無効になります。",
+			MessageType.Info
+		);
 	}
 }
